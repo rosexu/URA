@@ -12,18 +12,17 @@
 
 (setq q8test '((query (x) ((definition (A B) x) (definition (C D) x)) ())))
 
-; rule1, rule2, rule3, rule4, rule 5, rule6, rule 9
+; Exercises all rules.
 (setq comp3 '((query (x y z)
 					((definition (A C) x) (definition (C) y) (relation x y z)) ; rule 1
 					())
 			  (query (x y z h i j u v)
 					((definition (A B) x) ; rule 4
 					 (definition (String) y) ; rule 9
-					 (definition (E1 E2 E3) z) ; rule 8
+					 (definition (E1 E2 E3) i) ; rule 8
 					 (definition (D1 D2 D3) fr) ; rule5
 					 (relation f x y) (relation f x z) ; rule 2
-					 (relation f h i) (relation f j i) ; rule 3
-					 (relation l u z) (relation l v z) ; rule 8
+					 (relation f h i) (relation f j i) ; rule 3 and 8
 					 (relation g h fr)) ; for rule 5 to match b1, b2, b3
 					())
 				))
@@ -32,7 +31,6 @@
 
 ; TODO: Sort queries by length: make database table for each query, match every other query to it,
 ; delete original
-; Question: rule 8 vs rule 3
 
 ;*****************************************************************
 ; query-parts is created to reduce the number of parameters passed
@@ -60,10 +58,10 @@
 					(relation > f > v1 < mid)
 				>* lm2
 					(relation < f > v2 < mid)
+						where (not (eq <q v1 <q v2)) ; v1 != v2
 				>* lb)
-				< apdRules
-					where (and (not (exist '(r8 < mid < v1 < v2) <q apdRules))
-								(not (eq <q v1 <q v2)))) ; v1 != v2
+				> apdRules
+					where (not (exist '(r8 < mid < v1 < v2) <q apdRules)))
 		>* back)
 		(<< front
 			(query < vars
@@ -99,7 +97,7 @@
 (defun getB (f) 'B)
 
 (defun getMaximalSuccessors (As)
-	'(B1 B2 B3 B4))
+	'(B1 B2))
 
 ; Given a list of functions lstf (f1, ..., fk) and variables x
 ; and y, generate a list of relations as follows:
@@ -532,6 +530,7 @@
 ;(stable-sort tt #'(lambda (x y) (> (length x) (length y))))
 
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
+;(applyRuleControl '(Call rule8) comp3)
 
 (applyRuleControl 'rule1 q1)
 (applyRuleControl 'rule2 q2)
@@ -539,5 +538,5 @@
 (applyRuleControl 'rule4 q4)
 (applyrulecontrol 'rule5 q5)
 (applyrulecontrol 'rule6 q6)
-(applyrulecontrol 'rule8 q8)
+(applyrulecontrol 'rule8Main q8)
 (applyrulecontrol 'rule9 q9)
