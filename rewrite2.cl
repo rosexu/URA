@@ -88,15 +88,6 @@
 										   	:lm2 <q lm2
 										   	:v1 <q v1
 										   	:v2 <q v2)
-			   						    '(query < vars
-											(<< lf
-												(definition < clst < mid)
-											<< lm1
-												(relation < f < v1 < mid)
-											<< lm2
-												(relation < f < v2 < mid)
-											<< lb)
-											< apdRules)
 			   						   )))
 ))
 
@@ -143,10 +134,10 @@
 (defun getAllBCombinations (Bs var1 var2)
 	(cond
 		((null Bs) '(nil))
-		(t (append (addToFront `(relation ,(car Bs) ,var1) (getAllBCombinations (cdr Bs) var1 var2))
-				 (addToFront `(relation ,(car Bs) ,var2) (getAllBCombinations (cdr Bs) var1 var2))))))
+		(t (append (addToFront `(definition (,(car Bs)) ,var1) (getAllBCombinations (cdr Bs) var1 var2))
+				 (addToFront `(definition (,(car Bs)) ,var2) (getAllBCombinations (cdr Bs) var1 var2))))))
 
-(sb-rt:deftest getAllBCombinations-one (getAllBCombinations '(B1) 'x 'y) (((relation B1 x)) ((relation B1 y))))
+(sb-rt:deftest getAllBCombinations-one (getAllBCombinations '(B1) 'x 'y) (((definition (B1) x)) ((definition (B1) y))))
 (sb-rt:deftest getAllBCombinations-zero (getAllBCombinations '() 'x 'y) (nil))
 ; (sb-rt:deftest getAllBCombinations-multi (getAllBCombinations '(B1 B2) 'x 'y)
 ; 	(((relation B1 x) (relation B2 x))
@@ -174,7 +165,8 @@
 						   ,@(query-parts-lm2 queryInfo)
 						   ,@(query-parts-lb queryInfo)
 						   ,@relations
-						   	))
+						   	)
+						  ())
 				(genR8QueriesHelper part1 (cdr BComb) relations queryInfo)
 			)
 		)
@@ -189,10 +181,9 @@
 ; Cs: list of symbols
 ; queryInfo: query-parts struct containing query
 ; information.
-; origQuery: original query
 ; Returns: list of queries
 ;***************************************************
-(defun genR8Queries (f Cs queryInfo origQuery)
+(defun genR8Queries (f Cs queryInfo)
 	(let* ((fs (getPFDs f))
 		   (A (getA f))
 		   (B (getB f))
@@ -527,17 +518,18 @@
 
 (LoadControl
 	'(rule8
-		(Call rule8Main)
-		(Rep mergeDuplicateDef)))
+		(Seq rule8Main
+			 (Rep mergeDuplicateDef))))
 
 (LoadControl
 	'(ApplyAllRules
 		(Rep
-			(Seq rule1 rule2 rule3 rule4 rule5 rule6 rule8 rule9))))
+			(Seq rule1 rule2 rule3 rule4 rule5 rule6 (Call rule8) rule9))))
 
 ; Sort by length of x.
 ;(stable-sort tt #'(lambda (x y) (> (length x) (length y))))
 
+;(applyrulecontrol '(Call rule8) q8)
 ;Test: (applyRuleControl '(Call ApplyAllRules) q2)
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
 
@@ -547,5 +539,5 @@
 (applyRuleControl 'rule4 q4)
 (applyrulecontrol 'rule5 q5)
 (applyrulecontrol 'rule6 q6)
-(applyrulecontrol 'rule8Main q8)
+(applyrulecontrol 'rule8 q8)
 (applyrulecontrol 'rule9 q9)
