@@ -14,15 +14,15 @@
 
 ; rule1, rule2, rule3, rule4, rule 5, rule6, rule 9
 (setq comp3 '((query (x y z)
-					((definition (A C) x) (definition (C) y) (relation x y z))
+					((definition (A C) x) (definition (C) y) (relation x y z)) ; rule 1
 					())
-			  (query (x y z h i j)
-					((definition (A B) x)
+			  (query (x y z h i j u v)
+					((definition (A B) x) ; rule 4
 					 (definition (String) y) ; rule 9
 					 (definition (E1 E2 E3) z) ; rule 8
 					 (definition (D1 D2 D3) fr) ; rule5
-					 (relation f x y) (relation f x z)
-					 (relation f h i) (relation f j i)
+					 (relation f x y) (relation f x z) ; rule 2
+					 (relation f h i) (relation f j i) ; rule 3
 					 (relation l u z) (relation l v z) ; rule 8
 					 (relation g h fr)) ; for rule 5 to match b1, b2, b3
 					())
@@ -32,12 +32,12 @@
 
 ; TODO: Sort queries by length: make database table for each query, match every other query to it,
 ; delete original
+; Question: rule 8 vs rule 3
 
-;***************************************************
-; query-parts is created to reduce the number of
-; parameters passed into helper functions that is
-; used to generate multiple queries.
-;***************************************************
+;*****************************************************************
+; query-parts is created to reduce the number of parameters passed
+; into helper functions that is used to generate multiple queries.
+;*****************************************************************
 ; vars: list of symbols
 ; lf (list front): front of list of defs and rels
 ; lm1 (list middle 1) : middle 1 of list of defs and rels
@@ -145,15 +145,14 @@
 ; 	 ((relation B2 y) (relation B2 x))
 ; 	 ((relation B2 y) (relation B2 y))))
 
-;***************************************************
+;*************************************************************
 ; Helper function for genR8Queries
-;***************************************************
+;*************************************************************
 ; part1: (A x)
 ; Cs: list of symbols
-; queryInfo: query-parts struct containing query
-; information.
+; queryInfo: query-parts struct containing query information.
 ; Returns: list of queries
-;***************************************************
+;*************************************************************
 (defun genR8QueriesHelper (part1 BComb relations queryInfo)
 	(cond
 		((null BComb) nil)
@@ -173,16 +172,15 @@
 	)
 )
 
-;***************************************************
+;*************************************************************
 ; Generates Queries for Rule 8.
 ; v1 -f-> z <-f- v2, (definition (C1, ..., Ck) z)
-;***************************************************
+;*************************************************************
 ; f: function
 ; Cs: list of symbols
-; queryInfo: query-parts struct containing query
-; information.
+; queryInfo: query-parts struct containing query information.
 ; Returns: list of queries
-;***************************************************
+;*************************************************************
 (defun genR8Queries (f Cs queryInfo)
 	(let* ((fs (getPFDs f))
 		   (A (getA f))
@@ -203,8 +201,6 @@
 		 						  queryInfo))
 	)
 )
-; TODO: need to search for (definition something (query-parts-v1 queryInfo)) and
-; (definition something (query-parts-v2 queryInfo)) in lm1 and lf.
 
 ; To be applied after rule8 is applied to merge duplicate
 ; definitions of the form (definition (x1 ... xk) x)
@@ -229,8 +225,6 @@
 				< apdRules)
 		<< back)
 		(Bindq mergedlst (append <q clst1 <q clst2)))))
-
-;(applyRuleControl 'mergeDuplicateDef q8test)
 
 ; Primitive types
 (loadrules '(
@@ -271,14 +265,13 @@
 ; (setq queryInfo (make-query-parts :vars '(x y) :lf '(definition front) :lb '(definition back)
 ; 	:cf '(C1 C2) :cb '(C4 C5) :v1 'x))
 
-;***************************************************
+;*********************************************************************
 ; Generate Quries for Rule 9.
-;***************************************************
-; Concept: symbol
-; maxPreds: list of symbols of Maximal Predecessors
-; queryInfo: query-parts struct containing query
-; information.
-;***************************************************
+;*********************************************************************
+; Concept: a symbol.
+; maxPreds: list of symbols of Maximal Predecessors.
+; queryInfo: query-parts struct containing query information.
+;*********************************************************************
 (defun genR9Queries (Concept maxPreds queryInfo)
 	(cond
 		((null maxPreds) nil)
@@ -298,6 +291,7 @@
 	)
 )
 
+; Helper for rule 9, returns whether a concept is a datatype.
 (defun isDataType (Concept)
 	(cond
 		((eq Concept 'String) t)
@@ -516,6 +510,14 @@
 		((and (eq A 'A) (eq B 'C)) t)
 		(t nil)))
 
+(loadrules '(
+	(removeDups
+		(>* front > q >* mid < q >* back)
+		(<< front < q << mid << back))))
+
+(LoadControl
+	'(removeAllDups (Rep removeDups)))
+
 (LoadControl
 	'(rule8
 		(Seq rule8Main
@@ -524,13 +526,11 @@
 (LoadControl
 	'(ApplyAllRules
 		(Rep
-			(Seq rule1 rule2 rule3 rule4 rule5 rule6 (Call rule8) rule9))))
+			(Seq (Call removeAllDups) rule1 rule2 rule3 rule4 rule5 rule6 (Call rule8) rule9))))
 
 ; Sort by length of x.
 ;(stable-sort tt #'(lambda (x y) (> (length x) (length y))))
 
-;(applyrulecontrol '(Call rule8) q8)
-;Test: (applyRuleControl '(Call ApplyAllRules) q2)
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
 
 (applyRuleControl 'rule1 q1)
