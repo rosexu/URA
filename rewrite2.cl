@@ -26,7 +26,6 @@
 					 (relation g h fr)) ; for rule 5 to match b1, b2, b3
 					())
 				))
-
 (initPatMatch)
 
 ; TODO: Sort queries by length: make database table for each query, match every other query to it,
@@ -223,6 +222,28 @@
 				< apdRules)
 		<< back)
 		(Bindq mergedlst (append <q clst1 <q clst2)))))
+
+(loadrules '(
+    (removeDupRelAfterSubstitution
+        (>* front
+            (query > vars
+                (>* lf
+                    (relation > f > v1 > v2)
+                >* lm
+                    (relation < f < v1 < v2)
+                >* lb)
+            > apdRules)
+         >* back)
+        (<< front
+            (query < vars
+                (<< lf
+                    (relation < f < v1 < v2)
+                << lm
+                << lb)
+            < apdRules)
+        << back)
+    )
+))
 
 ; Primitive types
 (loadrules '(
@@ -425,7 +446,7 @@
  	(<< front << back))))
 
 (loadrules '(
-(rule2
+(rule2Main
 	(>* front
 		(query > vars
 		   	(>* lf (relation > f > v1 > v2)
@@ -440,7 +461,7 @@
 		   subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)))))
 
 (loadrules '(
-(rule3
+(rule3Main
 	(>* front
 		(query > vars
 			(>* lf (relation > f > v1 > v2)
@@ -521,9 +542,19 @@
 			 (Rep mergeDuplicateDef))))
 
 (LoadControl
+    '(rule2
+        (Seq rule2Main
+             (Rep removeDupRelAfterSubstitution))))
+
+(LoadControl
+    '(rule3
+        (Seq rule3Main
+             (Rep removeDupRelAfterSubstitution))))
+
+(LoadControl
 	'(ApplyAllRules
 		(Rep
-			(Seq (Call removeAllDups) rule1 rule2 rule3 rule4 rule5 rule6 (Call rule8) rule9))))
+			(Seq (Call removeAllDups) rule1 (Call rule2) (Call rule3) rule4 rule5 rule6 (Call rule8) rule9))))
 
 ; Sort by length of x.
 ;(stable-sort tt #'(lambda (x y) (> (length x) (length y))))
@@ -544,6 +575,7 @@
             ))
         )))
 
+(sb-rt:deftest matchVars-empty (matchVars '(X Y) '(X X) (make-hash-table)) nil)
 ; (sb-rt:deftest matchVars-empty (matchVars '() '() (make-hash-table)) (make-hash-table))
 ; (sb-rt:deftest matchVars-one (matchVars '(X) '(Y) (make-hash-table))
 ;                                (progn (defparameter ht (make-hash-table))
@@ -555,8 +587,8 @@
 (sb-rt:do-tests)
 
 (applyRuleControl 'rule1 q1)
-(applyRuleControl 'rule2 q2)
-(applyRuleControl 'rule3 q3)
+(applyRuleControl 'rule2Main q2)
+(applyRuleControl 'rule3Main q3)
 (applyRuleControl 'rule4 q4)
 (applyrulecontrol 'rule5 q5)
 (applyrulecontrol 'rule6 q6)
