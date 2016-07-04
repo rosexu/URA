@@ -411,7 +411,6 @@
 		(t nil)))
 
 (sb-rt:deftest getMaximalPredecessor-string (getMaximalPredecessors2 'String) (Person Dept))
-(sb-rt:do-tests)
 
 (loadrules '(
 (rule1
@@ -438,7 +437,7 @@
 		>* back)
 	(<< front (query < subbedVars < subbedBody (<< apdRules (r2 < f < v1))) << back)
 	(Bindq subbedVars (substitute <q v2 <q v3 <q vars)
-		   subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm (relation < f < v1 < v3) << lb) <q v2 <q v3)))))
+		   subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)))))
 
 (loadrules '(
 (rule3
@@ -459,7 +458,7 @@
 					< newApdRules)
 		<< back (query < subbedVars < subbedBody ()))
 	(Bindq subbedVars (substitute <q v3 <q v1 <q vars)
-		   subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm (relation < f < v3 < v2) << lb) <q v3 <q v1)
+		   subbedBody (subBody '(<< lf << lm (relation < f < v3 < v2) << lb) <q v3 <q v1)
 		   newApdRules '(<< apdRules (r3 < v1 < v3)))))
 )
 
@@ -529,8 +528,31 @@
 ; Sort by length of x.
 ;(stable-sort tt #'(lambda (x y) (> (length x) (length y))))
 
+; returns hash of all the matchings, return nil if none found.
+; Match vars2 -> vars1
+(defun matchVars (vars1 vars2 hash)
+	(cond
+		((null vars1) hash)
+		(t (let* ((firstVar1 (car vars1))
+				  (firstVar2 (car vars2))
+				  (matchedSym (gethash firstVar2 hash)))
+			(cond
+				((null matchedSym) (setf (gethash firstVar2 hash) firstVar1)
+					               (matchVars (cdr vars1) (cdr vars2) hash))
+				((eq firstVar1 matchedSym) (matchVars (cdr vars1) (cdr vars2) hash))
+                (t nil)
+            ))
+        )))
+
+; (sb-rt:deftest matchVars-empty (matchVars '() '() (make-hash-table)) (make-hash-table))
+; (sb-rt:deftest matchVars-one (matchVars '(X) '(Y) (make-hash-table))
+;                                (progn (defparameter ht (make-hash-table))
+;                                       (setf (gethash 'Y ht) 'X)
+;                                       ht))
+
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
 ;(applyRuleControl '(Call rule8) comp3)
+(sb-rt:do-tests)
 
 (applyRuleControl 'rule1 q1)
 (applyRuleControl 'rule2 q2)
