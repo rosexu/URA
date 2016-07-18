@@ -17,7 +17,7 @@
 					((definition (A C) x) (definition (C) y) (relation x y z)) ; rule 1
 					())
 			  (query (x y z h i j u v)
-					((definition (A B) x) ; rule 4
+					((definition (M N) x) ; rule 4
 					 (definition (String) y) ; rule 9
 					 (definition (E1 E2 E3) i) ; rule 8
 					 (definition (D1 D2 D3) fr) ; rule5
@@ -96,7 +96,7 @@
 (defun getB (f) 'B)
 
 (defun getMaximalSuccessors (As)
-	'(B1 B2))
+	'(B21 B22))
 
 ; Given a list of functions lstf (f1, ..., fk) and variables x
 ; and y, generate a list of relations as follows:
@@ -423,7 +423,7 @@
 (sb-rt:deftest existInList-right (existInList 'x '((relation f y x))) t)
 
 (defun getMaximalPredecessors (As)
-	'(B1 B2 B3 B4))
+	'(B11 B12 B13 B14))
 
 (defun getMaximalPredecessors2 (A)
 	(cond
@@ -515,11 +515,12 @@
 			(cons (substitute y x (car lst) :start 1) (subBody (cdr lst) y x)))
 		))
 
+; TODO: make function that merges defs after subbody
+
 ; Return whether A is a subset of B.
 (defun isSubsetOfType (A B)
 	(cond
-		((and (eq A 'A) (eq B 'B)) t)
-		((and (eq A 'B) (eq B 'A)) t)
+		((and (eq A 'M) (eq B 'N)) t)
 		(t nil)))
 
 ; Returns true if A is a subset of (not B).
@@ -544,17 +545,19 @@
 (LoadControl
     '(rule2
         (Seq rule2Main
-             (Rep removeDupRelAfterSubstitution))))
+             (Rep removeDupRelAfterSubstitution)
+             (Rep mergeDuplicateDef))))
 
 (LoadControl
     '(rule3
         (Seq rule3Main
-             (Rep removeDupRelAfterSubstitution))))
+             (Rep removeDupRelAfterSubstitution)
+             (Rep mergeDuplicateDef))))
 
 (LoadControl
 	'(ApplyAllRules
 		(Rep
-			(Seq (Call removeAllDups) rule1 (Call rule2) (Call rule3) rule4 rule5 rule6 (Call rule8) rule9))))
+			(Seq (Call removeAllDups) rule1 (Call rule2) rule4 (Call rule3) rule5 rule6 (Call rule8) rule9))))
 
 ; Sort by length of x.
 ;(stable-sort tt #'(lambda (x y) (> (length x) (length y))))
@@ -562,15 +565,15 @@
 ; returns hash of all the matchings, return nil if none found.
 ; Match vars2 -> vars1
 (defun matchVars (vars1 vars2 hash)
-	(cond
-		((null vars1) hash)
-		(t (let* ((firstVar1 (car vars1))
-				  (firstVar2 (car vars2))
-				  (matchedSym (gethash firstVar2 hash)))
-			(cond
-				((null matchedSym) (setf (gethash firstVar2 hash) firstVar1)
-					               (matchVars (cdr vars1) (cdr vars2) hash))
-				((eq firstVar1 matchedSym) (matchVars (cdr vars1) (cdr vars2) hash))
+    (cond
+        ((null vars1) hash)
+        (t (let* ((firstVar1 (car vars1))
+                  (firstVar2 (car vars2))
+                  (matchedSym (gethash firstVar2 hash)))
+            (cond
+                ((null matchedSym) (setf (gethash firstVar2 hash) firstVar1)
+                                   (matchVars (cdr vars1) (cdr vars2) hash))
+                ((eq firstVar1 matchedSym) (matchVars (cdr vars1) (cdr vars2) hash))
                 (t nil)
             ))
         )))
@@ -582,8 +585,40 @@
 ;                                       (setf (gethash 'Y ht) 'X)
 ;                                       ht))
 
+; returns true if there's a match, nil otherwise.
+; (length qbody2) >= (length qbody1)
+; Matches qbody2 -> qbody1
+(defun matchBody (qbody1 qbody2 vhash)
+    (cond
+        ((null qbody2) t)
+        ((eq (caar qbody2) 'definition)
+            (let ((def (car qbody2)))
+                (matchDef (cadr qbody2) (caddr qbody2) qbody1 (gethash (caddr qbody2) vhash)))) ; definition
+        ((eq (car qbody2) 'relation)) ; relation
+    ))
+
+(defun matchDef (clst var qbody binding)
+    (cond
+        ((null binding) (matchDefFree clst var qbody))
+        (t (matchDefBound clst var qbody binding))))
+
+; When the matching for var is known, match a definition.
+(defun matchDefBound (clst var qbody val)
+    (cond
+        ((null qbody) nil)
+        ((eq (caar qbody) 'definition)
+            (let* ((def (car qbody))
+                   (clstToMatch (cadr def))
+                   (varToMatch (caddr def)))
+            (cond
+                ((and (eq varToMatch val) (subsetq clstToMatch clst)))) t)
+                (t (matchDefBound clst var (rest qbody) val)))
+        (t (matchDefBound clst var (rest qbody) val))))
+
+
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
 ;(applyRuleControl '(Call rule8) comp3)
+
 (sb-rt:do-tests)
 
 (applyRuleControl 'rule1 q1)
