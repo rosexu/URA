@@ -75,19 +75,45 @@
 				<< lb)
 				< newApdRules)
 		<< back
-		<< newQueries)
+		<< newnewQueries)
 		(Bindq newApdRules '(<< apdRules (r8 < mid < v1 < v2))
-			   newQueries (genR8Queries <q f
-			   						    <q clst
-			   						    (make-query-parts
-										   	:vars <q vars
-										   	:lf <q lf
-										   	:lb <q lb
-										   	:lm1 <q lm1
-										   	:lm2 <q lm2
-										   	:v1 <q v1
-										   	:v2 <q v2)
-			   						   )))
+			   ; newQueries (genR8Queries <q f
+			   ; 						    <q clst
+			   ; 						    (make-query-parts
+						; 				   	:vars <q vars
+						; 				   	:lf <q lf
+						; 				   	:lb <q lb
+						; 				   	:lm1 <q lm1
+						; 				   	:lm2 <q lm2
+						; 				   	:v1 <q v1
+						; 				   	:v2 <q v2)
+			   ; 						   )
+			   mutation (setq intermediate (genR8Queries <q f
+					   						    <q clst
+					   						    (make-query-parts
+												   	:vars <q vars
+												   	:lf <q lf
+												   	:lb <q lb
+												   	:lm1 <q lm1
+												   	:lm2 <q lm2
+												   	:v1 <q v1
+												   	:v2 <q v2)
+					   						   ))
+			   mutation2 (applyRuleControl '(Call repMergeDupDefs) intermediate)
+			   newnewQueries (filterQueries intermediate
+			   								'(<< front
+												(query < vars
+													(<< lf
+														(definition < clst < mid)
+													<< lm1
+														(relation < f < v1 < mid)
+													<< lm2
+														(relation < f < v2 < mid)
+													<< lb)
+													< newApdRules)
+											<< back)
+											'())
+			   ))
 ))
 
 ; Used to mock what is returned from the TBox.
@@ -470,8 +496,8 @@
 		   	> apdRules)
 		>* back)
 	(<< front << newQuery << back)
-	(Bindq subbedVars (substitute <q v2 <q v3 <q vars)
-		   subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)
+	(Bindq ;subbedVars (substitute <q v2 <q v3 <q vars)
+		   ;subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)
 		   mutation (setq intermediate (list (list 'query (substitute <q v2 <q v3 <q vars) (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3) '(<< apdRules (r2 < f < v1)))))
 		   mutation2 (applyRuleControl '(Call repRemoveDupRelAndMergeDupDefs) intermediate)
 		   newQuery (filterQueries intermediate
@@ -576,7 +602,7 @@
 (LoadControl
 	'(ApplyAllRules
 		(Rep
-			(Seq (Call removeAllDups) rule1 (Call rule2) rule4 (Call rule3) rule5 rule6 (Call rule8) rule9))))
+			(Seq (Call removeAllDups) rule1 rule2Main rule4 (Call rule3) rule5 rule6 rule8Main rule9))))
 
 (LoadControl '(repMergeDupDefs
 	(Rep mergeDuplicateDef)))
