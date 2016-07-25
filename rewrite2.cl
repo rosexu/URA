@@ -28,6 +28,8 @@
 				))
 (initPatMatch)
 
+(defvar intermediate '())
+
 ; TODO: Sort queries by length: make database table for each query, match every other query to it,
 ; delete original
 
@@ -162,7 +164,7 @@
 						   ,@(query-parts-lb queryInfo)
 						   ,@relations
 						   	)
-						  ())
+						  ((r3 ,(query-parts-v1 queryInfo) ,(query-parts-v2 queryInfo))))
 				(genR8QueriesHelper part1 (cdr BComb) relations queryInfo)
 			)
 		)
@@ -387,13 +389,24 @@
 			< newApdRules)
 		<< back
 		; start new query
-		(query < vars
-			((definition < maxPred < v1)
-			<< lf
-			<< lm
-			<< lb)
-			()))
+		<< newQuery)
 	(Bindq maxPred (getMaximalPredecessors <q clst)
+		   newQuery (filterQueries
+		   				`((query < vars
+							((definition < maxPred < v1)
+							<< lf
+							<< lm
+							<< lb)
+						())) ; queries to be added
+						'(<< front
+							(query < vars
+								(<< lf (definition < clst < var)
+								<< lm (relation < f < v1 < var)
+								<< lb)
+								< newApdRules)
+							<< back) ; existing queries
+						'() ; result
+					)
 		   newApdRules '(<< apdRules (r5 < var)))
 )))
 
@@ -456,9 +469,15 @@
 			 >* lb)
 		   	> apdRules)
 		>* back)
-	(<< front (query < subbedVars < subbedBody (<< apdRules (r2 < f < v1))) << back)
+	(<< front << newQuery << back)
 	(Bindq subbedVars (substitute <q v2 <q v3 <q vars)
-		   subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)))))
+		   subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)
+		   mutation (setq intermediate (list (list 'query (substitute <q v2 <q v3 <q vars) (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3) '(<< apdRules (r2 < f < v1)))))
+		   mutation2 (applyRuleControl '(Call repRemoveDupRelAndMergeDupDefs) intermediate)
+		   newQuery (filterQueries intermediate
+		   						   '(<< front << back) ; existing queries
+		   						   '())
+		   ))))
 
 (loadrules '(
 (rule3Main
@@ -520,13 +539,13 @@
 ; Return whether A is a subset of B.
 (defun isSubsetOfType (A B)
 	(cond
-		((and (eq A 'M) (eq B 'N)) t)
+		((and (eq A 'N) (eq B 'M)) t)
 		(t nil)))
 
 ; Returns true if A is a subset of (not B).
 (defun isSubsetOfNotType (A B)
 	(cond
-		((and (eq A 'A) (eq B 'C)) t)
+		((and (eq A 'C) (eq B 'A)) t)
 		(t nil)))
 
 (loadrules '(
@@ -559,8 +578,17 @@
 		(Rep
 			(Seq (Call removeAllDups) rule1 (Call rule2) rule4 (Call rule3) rule5 rule6 (Call rule8) rule9))))
 
+(LoadControl '(repMergeDupDefs
+	(Rep mergeDuplicateDef)))
+
+(LoadControl '(repRemoveDupRelAndMergeDupDefs
+	(Seq (Rep removeDupRelAfterSubstitution)
+		 (Rep mergeDuplicateDef))))
+
 ; Sort by length of x.
 ;(stable-sort tt #'(lambda (x y) (> (length x) (length y))))
+
+(defvar matchings (make-hash-table))
 
 ; returns hash of all the matchings, return nil if none found.
 ; Match vars2 -> vars1
@@ -586,24 +614,80 @@
 ;                                       ht))
 
 ; returns true if there's a match, nil otherwise.
-; (length qbody2) >= (length qbody1)
 ; Matches qbody2 -> qbody1
-(defun matchBody (qbody1 qbody2 vhash)
+(defun matchBody (qbody1 qbody2)
     (cond
         ((null qbody2) t)
-        ((eq (caar qbody2) 'definition)
+        ((eq (caar qbody2) 'definition) ; definition
             (let ((def (car qbody2)))
-                (matchDef (cadr qbody2) (caddr qbody2) qbody1 (gethash (caddr qbody2) vhash)))) ; definition
-        ((eq (car qbody2) 'relation)) ; relation
+                (and (matchDef (cadr def) (caddr def) qbody1 (gethash (caddr def) matchings))
+                	 (matchBody qbody1 (rest qbody2)))))
+        ((eq (caar qbody2) 'relation) ; relation
+        	(let ((rel (car qbody2)))
+        		(and (matchRel (cadr rel) (caddr rel) (cadddr rel) qbody1)
+        			 (matchBody qbody1 (rest qbody2)))))
     ))
+
+; match relations
+(defun matchRel (f x y qbody)
+	(cond
+		((null qbody) nil)
+		((eq (caar qbody) 'definition) (matchRel f x y (rest qbody)))
+		(t (let* ((bindx (gethash x matchings))
+				  (bindy (gethash y matchings))
+				  (rel (car qbody))
+				  (matchf (cadr rel))
+				  (matchx (caddr rel))
+				  (matchy (cadddr rel)))
+			; (print rel)
+			; (print bindx)
+			; (print bindy)
+			(cond
+				((and (null bindx) (null bindy)) ; x, y free
+				 (cond
+				 	((equal f matchf) (setf (gethash x matchings) matchx)
+				 					  (setf (gethash y matchings) matchy)
+				 					  t)
+				 	(t (matchRel f x y (rest qbody))))
+				)
+				((null bindx)
+				 (cond ; x free
+					((and (equal f matchf) (equal y matchy)) (setf (gethash x matchings) matchx) t)
+					(t (matchRel f x y (rest qbody)))))
+				((null bindy) ; y free
+			     (cond
+			     	((and (equal f matchf) (equal x matchx)) (setf (gethash y matchings) matchy) t)
+			     	(t (matchRel f x y (rest qbody)))))
+				(t (cond ; x, y bound
+						((equal (car qbody) `(relation ,f ,bindx ,bindy)) t)
+						(t (matchRel f x y (rest qbody))))
+				)
+			)
+		))))
 
 (defun matchDef (clst var qbody binding)
     (cond
         ((null binding) (matchDefFree clst var qbody))
         (t (matchDefBound clst var qbody binding))))
 
+; When the matching for var is unknown, match a definition.
+(defun matchDefFree (clst var qbody)
+	(cond
+		((null qbody) nil) ; empty => no match
+		((eq (caar qbody) 'relation) (matchDefFree clst var (rest qbody))) ; relation => match rest
+		(t (let* ((def (car qbody)) ; is definition
+				  (clstToMatch (cadr def)))
+			(cond
+				((subsetp clstToMatch clst) (setf (gethash var matchings) (caddr def)) t) ; is subset, change set hashtable of mappings
+				(t (matchDefFree clst var (rest qbody))))
+			))))
+
 ; When the matching for var is known, match a definition.
 (defun matchDefBound (clst var qbody val)
+	; (print var)
+	; (print val)
+	; (print clst)
+	; (print qbody)
     (cond
         ((null qbody) nil)
         ((eq (caar qbody) 'definition)
@@ -611,10 +695,86 @@
                    (clstToMatch (cadr def))
                    (varToMatch (caddr def)))
             (cond
-                ((and (eq varToMatch val) (subsetq clstToMatch clst)))) t)
-                (t (matchDefBound clst var (rest qbody) val)))
-        (t (matchDefBound clst var (rest qbody) val))))
+                ((and (eq varToMatch val) (subsetp clstToMatch clst)) t)
+                (t (matchDefBound clst var (rest qbody) val)))))
+        (t (matchDefBound clst var (rest qbody) val))
+    	))
 
+; query: query to check
+; querylst: lst of queries to check against
+; returns: whether query is subsumed in one of the queries in querylst
+(defun isQuerySubsumed (query querylst)
+	(cond
+		((null querylst) nil)
+		((isIncluded query (car querylst)) t)
+		(t (isQuerySubsumed query (cdr querylst)))))
+
+; returns: whether q1 is subsumed by q2
+(defun isIncluded (q1 q2)
+	(setq matchings (make-hash-table))
+	(let ((mapping (matchVars (cadr q2) (cadr q1) (make-hash-table))))
+		(cond
+			((null mapping) nil)
+			(t (setq matchings mapping)
+			   (matchBody (caddr q2) (caddr q1))))))
+
+; result is empty lst to start
+(defun filterQueries (queries existingQueries result)
+	(cond
+		((null existingQueries) queries)
+		((null queries) result)
+		((isQuerySubsumed (car queries) existingQueries)
+			(filterQueries (rest queries) existingQueries result))
+		(t (filterQueries (rest queries) existingQueries (cons (car queries) result)))))
+
+(sb-rt:deftest subsume-y1 (isQuerySubsumed
+	'(QUERY (X Y Y J I J U V)
+  	((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A B21 B B22) J)
+   	(DEFINITION (M) X) (RELATION F X Y) (RELATION F1 J #:G1035)
+   	(RELATION F2 J #:G1036) (RELATION F3 J #:G1037))
+  	NIL)
+  	'((QUERY (X Y Y J I J U V)
+  	((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A B22 B B21) J)
+   	(DEFINITION (M) X) (RELATION F X Y) (RELATION F1 J #:G1035)
+   	(RELATION F2 J #:G1036) (RELATION F3 J #:G1037))
+  	NIL))) t)
+
+(sb-rt:deftest subsume-n2 (isQuerySubsumed
+	'(QUERY (X Y Y H I J U V)
+  ((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A) H)
+   (DEFINITION (M) X) (DEFINITION (B B21 B22) J) (RELATION F X Y)
+   (RELATION F1 H #:G1035) (RELATION F1 J #:G1035) (RELATION F2 H #:G1036)
+   (RELATION F2 J #:G1036) (RELATION F3 H #:G1037) (RELATION F3 J #:G1037))
+  ((R3 H J)))
+ 	'((QUERY (X Y Y J I J U V)
+  ((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A B B21 B22) J)
+   (DEFINITION (M) X) (RELATION F X Y) (RELATION F1 J #:G1035)
+   (RELATION F2 J #:G1036) (RELATION F3 J #:G1037))
+  NIL)))
+	nil)
+
+(isQuerySubsumed
+	'(QUERY (X Y Y H I J U V)
+  ((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A) H)
+   (DEFINITION (M) X) (DEFINITION (B B21 B22) J))
+  ((R3 H J)))
+ 	'((QUERY (X Y Y J I J U V)
+  ((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A B B21 B22) J)
+   (DEFINITION (M) X))
+  NIL)))
+
+(sb-rt:deftest subsume-n1 (isQuerySubsumed
+'(QUERY (X Y Y H I J U V)
+  ((DEFINITION (M) X) (DEFINITION (STRING) Y) (DEFINITION (E1 E2 E3) I)
+   (DEFINITION (D1 D2 D3) FR) (RELATION F X Y) (RELATION F H I)
+   (RELATION F J I) (RELATION G H FR))
+  ((R2 F X) (R4 X) (R3 H J) (R5 FR) (R8 I H J) (R9 STRING Y)))
+'((QUERY (X Y Y H I J U V)
+  ((DEFINITION (B11 B12 B13 B14) H) (DEFINITION (M) X) (DEFINITION (STRING) Y)
+   (DEFINITION (E1 E2 E3) I) (RELATION F X Y) (RELATION F H I)
+   (RELATION F J I))
+  ((R3 H J) (R8 I H J) (R9 STRING Y)))))
+nil)
 
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
 ;(applyRuleControl '(Call rule8) comp3)
