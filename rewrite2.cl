@@ -26,6 +26,7 @@
 					 (relation g h fr)) ; for rule 5 to match b1, b2, b3
 					())
 				))
+
 (initPatMatch)
 
 (defvar intermediate '())
@@ -295,17 +296,45 @@
 			<< queries
 			)
 		(Bindq maxPreds (getMaximalPredecessors2 <q c)
-			   queries (genR9Queries
-			   	<q c
-			   	(getMaximalPredecessors2 <q c)
-			   	(make-query-parts
-				   	:vars <q vars
-				   	:lf <q lf
-				   	:lb <q lb
-				   	:cf <q cf
-				   	:cb <q cb
-				   	:v1 <q v1))
-			   newApdRules '(<< apdRules (r9 < c < v1)))
+			   newApdRules '(<< apdRules (r9 < c < v1))
+			   queries (filterQueries
+			   				; queries to be added
+				   			(genR9Queries
+							   	<q c
+							   	(getMaximalPredecessors2 <q c)
+							   	(make-query-parts
+								   	:vars <q vars
+								   	:lf <q lf
+								   	:lb <q lb
+								   	:cf <q cf
+								   	:cb <q cb
+								   	:v1 <q v1))
+				   			; existing queries:
+				   			'(<< front
+							(query < vars
+								(<< lf
+									(definition (<< cf < c << cb) < v1)
+								<< lb)
+								< newApdRules)
+							<< back)
+							'())
+			  ;  (filterQueries
+		   ; 				`((query < vars
+					; 		((definition < maxSucc < v1)
+					; 		<< lf
+					; 		<< lm
+					; 		<< lb)
+					; 	())) ; queries to be added
+					; 	'(<< front
+					; 		(query < vars
+					; 			(<< lf (definition < clst < v1)
+					; 			<< lm (relation < f < v1 < v2)
+					; 			<< lb)
+					; 			< newApdRules)
+					; 		<< back) ; existing queries
+					; 	'() ; result
+					; )
+			   )
 	)
 ))
 
@@ -382,14 +411,32 @@
 				< newApdRules)
 			<< back
 			; start new query
-			(query < vars
-				((definition < maxSucc < v2)
-				<< lf
-				<< lm
-				<< lb)
-				()))
+			; (query < vars
+			; 	((definition < maxSucc < v2)
+			; 	<< lf
+			; 	<< lm
+			; 	<< lb)
+			; 	())
+			<< newQuery
+			)
 		(Bindq maxSucc (getMaximalSuccessors <q clst)
-			   newApdRules '(<< apdRules (r6 < v1)))
+			   newApdRules '(<< apdRules (r6 < v1))
+			   newQuery (filterQueries
+		   				`((query < vars
+							((definition < maxSucc < v1)
+							<< lf
+							<< lm
+							<< lb)
+						())) ; queries to be added
+						'(<< front
+							(query < vars
+								(<< lf (definition < clst < v1)
+								<< lm (relation < f < v1 < v2)
+								<< lb)
+								< newApdRules)
+							<< back) ; existing queries
+						'() ; result
+					))
 	)
 ))
 
@@ -498,7 +545,10 @@
 	(<< front << newQuery << back)
 	(Bindq ;subbedVars (substitute <q v2 <q v3 <q vars)
 		   ;subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)
-		   mutation (setq intermediate (list (list 'query (substitute <q v2 <q v3 <q vars) (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3) '(<< apdRules (r2 < f < v1)))))
+		   mutation (setq intermediate
+		   				  (list (list 'query (substitute <q v2 <q v3 <q vars)
+		   				  	                 (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)
+		   				  	                 '(<< apdRules (r2 < f < v1)))))
 		   mutation2 (applyRuleControl '(Call repRemoveDupRelAndMergeDupDefs) intermediate)
 		   newQuery (filterQueries intermediate
 		   						   '(<< front << back) ; existing queries
@@ -522,10 +572,22 @@
 					<< lm (relation < f < v3 < v2)
 					<< lb)
 					< newApdRules)
-		<< back (query < subbedVars < subbedBody ()))
-	(Bindq subbedVars (substitute <q v3 <q v1 <q vars)
-		   subbedBody (subBody '(<< lf << lm (relation < f < v3 < v2) << lb) <q v3 <q v1)
-		   newApdRules '(<< apdRules (r3 < v1 < v3)))))
+		<< back
+		;(query < subbedVars < subbedBody ())
+		<< newQuery
+		)
+	(Bindq ;subbedVars (substitute <q v3 <q v1 <q vars)
+		   ;subbedBody (subBody '(<< lf << lm (relation < f < v3 < v2) << lb) <q v3 <q v1)
+		   newApdRules '(<< apdRules (r3 < v1 < v3))
+		   mutation (setq intermediate
+		   				  (list (list 'query (substitute <q v3 <q v1 <q vars)
+		   				  	                 (subBody '(<< lf << lm (relation < f < v3 < v2) << lb) <q v3 <q v1)
+		   				  	                 '())))
+		   mutation2 (applyRuleControl '(Call repRemoveDupRelAndMergeDupDefs) intermediate)
+		   newQuery (filterQueries intermediate
+		   						   '(<< front << back) ; existing queries
+		   						   '())
+		   )))
 )
 
 (loadrules '(
@@ -602,7 +664,7 @@
 (LoadControl
 	'(ApplyAllRules
 		(Rep
-			(Seq (Call removeAllDups) rule1 rule2Main rule4 (Call rule3) rule5 rule6 rule8Main rule9))))
+			(Seq (Call removeAllDups) rule1 rule2Main rule4 rule3Main rule5 rule6 rule8Main rule9))))
 
 (LoadControl '(repMergeDupDefs
 	(Rep mergeDuplicateDef)))
@@ -805,7 +867,25 @@ nil)
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
 ;(applyRuleControl '(Call rule8) comp3)
 
+; TODO: write a rule control program for subsumption.
+
 (sb-rt:do-tests)
+
+
+(isQuerySubsumed
+'(QUERY (X Y Y J I J U V)
+  ((DEFINITION (B21 B22) STRING_PRED) (DEFINITION (M) X) (DEFINITION NIL Y)
+   (DEFINITION (A B21 B22 B) J) (DEFINITION (D1 D2 D3) FR) (RELATION F X Y)
+   (RELATION G J FR) (RELATION F1 J #:G558) (RELATION F2 J #:G559)
+   (RELATION F3 J #:G560))
+  ((R5 FR)))
+
+'((QUERY (X Y Y J I J U V)
+  ((DEFINITION (B21 B22) STRING_PRED) (DEFINITION (M) X) (DEFINITION NIL Y)
+   (DEFINITION (A B21 B22 B) J) (DEFINITION (D1 D2 D3) FR) (RELATION F X Y)
+   (RELATION G J FR) (RELATION F1 J #:G558) (RELATION F2 J #:G559)
+   (RELATION F3 J #:G560))
+  ((R5 FR)))))
 
 (applyRuleControl 'rule1 q1)
 (applyRuleControl 'rule2Main q2)
