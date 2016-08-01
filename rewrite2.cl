@@ -26,6 +26,7 @@
 					 (relation g h fr)) ; for rule 5 to match b1, b2, b3
 					())
 				))
+(setq temp comp3)
 (initPatMatch)
 
 (defvar intermediate '())
@@ -580,11 +581,6 @@
              (Rep removeDupRelAfterSubstitution)
              (Rep mergeDuplicateDef))))
 
-(LoadControl
-	'(ApplyAllRules
-		(Rep
-			(Seq (Call removeAllDups) rule1 (Call rule2) rule4 (Call rule3) rule5 rule6 (Call rule8) rule9))))
-
 (LoadControl '(repMergeDupDefs
 	(Rep mergeDuplicateDef)))
 
@@ -797,9 +793,19 @@ nil)
 
 (loadrules '(
 (subsumption
- 	(>* lst)
+ 	(>* lst
+ 		where (progn (Bindq filtered (filterAll <q lst '() '()))
+ 			         (! < (length <q filtered) (length <q lst))))
  	(<< filtered)
- 	(Bindq filtered (filterAll <q lst '() '())))))
+ 	;(Bindq filtered (filterAll <q lst '() '()))
+ 	)))
+
+(LoadControl
+	'(ApplyAllRules
+		(Rep
+			(Seq (Call removeAllDups) rule1 (Call rule2) rule4 (Call rule3) rule5 rule6 subsumption (Call rule8) rule9))
+			 ))
+
 
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
 ;(applyRuleControl '(Call rule8) comp3)
