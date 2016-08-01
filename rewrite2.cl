@@ -389,24 +389,30 @@
 			< newApdRules)
 		<< back
 		; start new query
-		<< newQuery)
+		;<< newQuery
+		(query < vars
+ 			((definition < maxPred < v1)
+ 			<< lf
+ 			<< lm
+ 			<< lb)
+ 			()))
 	(Bindq maxPred (getMaximalPredecessors <q clst)
-		   newQuery (filterQueries
-		   				`((query < vars
-							((definition < maxPred < v1)
-							<< lf
-							<< lm
-							<< lb)
-						())) ; queries to be added
-						'(<< front
-							(query < vars
-								(<< lf (definition < clst < var)
-								<< lm (relation < f < v1 < var)
-								<< lb)
-								< newApdRules)
-							<< back) ; existing queries
-						'() ; result
-					)
+		   ; newQuery (filterQueries
+		   ; 				`((query < vars
+					; 		((definition < maxPred < v1)
+					; 		<< lf
+					; 		<< lm
+					; 		<< lb)
+					; 	())) ; queries to be added
+					; 	'(<< front
+					; 		(query < vars
+					; 			(<< lf (definition < clst < var)
+					; 			<< lm (relation < f < v1 < var)
+					; 			<< lb)
+					; 			< newApdRules)
+					; 		<< back) ; existing queries
+					; 	'() ; result
+					; )
 		   newApdRules '(<< apdRules (r5 < var)))
 )))
 
@@ -469,14 +475,15 @@
 			 >* lb)
 		   	> apdRules)
 		>* back)
-	(<< front << newQuery << back)
+	(<< front (query < subbedVars < subbedBody (<< apdRules (r2 < f < v1))) << back)
+	;(<< front << newQuery << back)
 	(Bindq subbedVars (substitute <q v2 <q v3 <q vars)
 		   subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)
-		   mutation (setq intermediate (list (list 'query (substitute <q v2 <q v3 <q vars) (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3) '(<< apdRules (r2 < f < v1)))))
-		   mutation2 (applyRuleControl '(Call repRemoveDupRelAndMergeDupDefs) intermediate)
-		   newQuery (filterQueries intermediate
-		   						   '(<< front << back) ; existing queries
-		   						   '())
+		   ; mutation (setq intermediate (list (list 'query (substitute <q v2 <q v3 <q vars) (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3) '(<< apdRules (r2 < f < v1)))))
+		   ; mutation2 (applyRuleControl '(Call repRemoveDupRelAndMergeDupDefs) intermediate)
+		   ; newQuery (filterQueries intermediate
+		   ; 						   '(<< front << back) ; existing queries
+		   ; 						   '())
 		   ))))
 
 (loadrules '(
@@ -727,6 +734,18 @@
 			(filterQueries (rest queries) existingQueries result))
 		(t (filterQueries (rest queries) existingQueries (cons (car queries) result)))))
 
+
+(defun filterAll (queries front result)
+	(cond
+		((null queries) result)
+		((null (filterQueries (list (car queries)) front '())) ; subsumed by front
+			(filterAll (rest queries) front result)) ; no need to add to front
+		((null (filterQueries (list (car queries)) (rest queries) '())) ; subsumed by back
+			(filterAll (rest queries) front result)) ; no need to add to front since deleted
+		(t (filterAll (rest queries) (cons (car queries) front) (cons (car queries) result))) ; not subsumed
+	)
+)
+
 (sb-rt:deftest subsume-y1 (isQuerySubsumed
 	'(QUERY (X Y Y J I J U V)
   	((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A B21 B B22) J)
@@ -776,8 +795,15 @@
   ((R3 H J) (R8 I H J) (R9 STRING Y)))))
 nil)
 
+(loadrules '(
+(subsumption
+ 	(>* lst)
+ 	(<< filtered)
+ 	(Bindq filtered (filterAll <q lst '() '())))))
+
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
 ;(applyRuleControl '(Call rule8) comp3)
+;(applyRuleControl 'subsumption comp3)
 
 (sb-rt:do-tests)
 
