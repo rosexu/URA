@@ -26,13 +26,22 @@
 					 (relation g h fr)) ; for rule 5 to match b1, b2, b3
 					())
 				))
-(setq temp comp3)
+(setq temp '((query (x y z)
+					((definition (A C) x) (definition (C) y) (relation x y z)) ; rule 1
+					())
+			  (query (x y z h i j u v)
+					((definition (M N) x) ; rule 4
+					 (definition (String) y) ; rule 9
+					 (definition (E1 E2 E3) i) ; rule 8
+					 (definition (D1 D2 D3) fr) ; rule5
+					 (relation f x y) (relation f x z) ; rule 2
+					 (relation f h i) (relation f j i) ; rule 3 and 8
+					 (relation g h fr)) ; for rule 5 to match b1, b2, b3
+					())
+				))
 (initPatMatch)
 
 (defvar intermediate '())
-
-; TODO: Sort queries by length: make database table for each query, match every other query to it,
-; delete original
 
 ;*****************************************************************
 ; query-parts is created to reduce the number of parameters passed
@@ -165,7 +174,9 @@
 						   ,@(query-parts-lb queryInfo)
 						   ,@relations
 						   	)
-						  ((r3 ,(query-parts-v1 queryInfo) ,(query-parts-v2 queryInfo))))
+						  (
+						  	;(r3 ,(query-parts-v1 queryInfo) ,(query-parts-v2 queryInfo))
+						  ))
 				(genR8QueriesHelper part1 (cdr BComb) relations queryInfo)
 			)
 		)
@@ -542,8 +553,6 @@
 			(cons (substitute y x (car lst) :start 1) (subBody (cdr lst) y x)))
 		))
 
-; TODO: make function that merges defs after subbody
-
 ; Return whether A is a subset of B.
 (defun isSubsetOfType (A B)
 	(cond
@@ -616,25 +625,116 @@
 ;                                       (setf (gethash 'Y ht) 'X)
 ;                                       ht))
 
+; variable -> set of past binded values
+; variables must be free, those that are not free are taken care of in matchVars.
+; TODO: populate pastMatchings
+(defvar pastMatchings (make-hash-table))
+
+; TODO: Is deleting past matching after backtrack needed? Yes I think so.
+(defun backtrack (cont qbody1 qbody2)
+	; (print "backtrack")
+	; (print cont)
+	(cond
+		((null cont) nil) ; backtrack fails if continuation is empty, nothing has been executed before
+		((eq (caar cont) 'definition) ; definition
+			(let* ((def (car cont))
+				   (clst (cadr def))
+				   (var (caddr def)))
+				(cond
+					((member var boundVars) (backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
+					((existInCont var (rest cont))
+						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
+					((null (matchDefFree clst var qbody1)) ; can't match because no available free matching
+						; (print (format t "reset ~a" def))
+						(setf (gethash var pastMatchings) nil) ; only set to nil if it doesn't exist in rest cont
+						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
+					(t (matchBody cont qbody1 qbody2)) ; new match for definition => keep matching body
+				)))
+		((eq (caar cont) 'relation) ; relation
+			(let* ((rel (car cont))
+				   (f (cadr rel))
+				   (x (caddr rel))
+				   (y (cadddr rel)))
+				(cond
+					((and (member x boundVars) (member y boundVars)) ; skip and keep backtracking
+						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
+					((or (and (existInCont x (rest cont)) (existInCont y (rest cont)))
+						 (and (existInCont x (rest cont)) (member y boundVars))
+						 (and (member x boundVars) (existInCont y (rest cont))))
+						; (print "exist previously")
+						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
+					((null (matchRel f x y qbody1)) ; no available free matching
+						; (print (format t "reset ~a" rel))
+						(setf (gethash x pastMatchings) nil)
+						(setf (gethash y pastMatchings) nil)
+						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
+					(t ;(print "found new match")
+					   (matchBody cont qbody1 qbody2)) ; found new match and updated current matching
+			))
+		)))
+
+(defun existInCont (var cont)
+	(cond
+		((null cont) nil)
+		((eq (caar cont) 'definition)
+			(let ((def (car cont)))
+				(or (equal (caddr def) var) (existInCont var (rest cont)))))
+		((eq (caar cont) 'relation)
+			(let ((rel (car cont)))
+				(or (equal (caddr rel) var) (equal (cadddr rel) var) (existInCont var (rest cont)))))))
+
+(sb-rt:deftest existInCont-empty (existInCont 'x '()) nil)
+
+(sb-rt:deftest existInCont-y1 (existInCont 'x
+  '((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A) H)
+   (DEFINITION (M) X) (DEFINITION (B B21 B22) J) (RELATION F X Y)
+   (RELATION F1 H #:G1035) (RELATION F1 J #:G1035) (RELATION F2 H #:G1036)
+   (RELATION F2 J #:G1036) (RELATION F3 H #:G1037) (RELATION F3 J #:G1037)))
+	t)
+
+(sb-rt:deftest existInCont-y2 (existInCont 'STRING_PRED
+	'((DEFINITION (DEPT) STRING_PRED) (DEFINITION NIL Y) (DEFINITION (M) X)
+ 	  (DEFINITION (B11 B12 B13 B14 A B B21 B22) J)))
+    t)
+
 ; returns true if there's a match, nil otherwise.
 ; Matches qbody2 -> qbody1
-(defun matchBody (qbody1 qbody2)
+(defun matchBody (cont qbody1 qbody2)
     (cond
         ((null qbody2) t)
         ((eq (caar qbody2) 'definition) ; definition
-            (let ((def (car qbody2)))
-                (and (matchDef (cadr def) (caddr def) qbody1 (gethash (caddr def) matchings))
-                	 (matchBody qbody1 (rest qbody2)))))
+            (let* ((def (car qbody2))
+            	   (defMatched (matchDef (cadr def) (caddr def) qbody1 (gethash (caddr def) matchings))))
+            	(cond
+            		((null defMatched)
+            			; (maphash #'print-hash-entry matchings)
+            			; (print (format t "failed to match ~a with ~a" def (gethash (caddr def) matchings)))
+            			; (maphash #'print-hash-entry pastMatchings)
+		     			(backtrack cont qbody1 qbody2))
+            		(t (matchBody (cons def cont) qbody1 (rest qbody2))) ; def matched
+            		)))
+                ; (and (matchDef (cadr def) (caddr def) qbody1 (gethash (caddr def) matchings))
+                ; 	 (matchBody qbody1 (rest qbody2)))))
         ((eq (caar qbody2) 'relation) ; relation
-        	(let ((rel (car qbody2)))
-        		(and (matchRel (cadr rel) (caddr rel) (cadddr rel) qbody1)
-        			 (matchBody qbody1 (rest qbody2)))))
+        	(let* ((rel (car qbody2))
+        		   (relMatched (matchRel (cadr rel) (caddr rel) (cadddr rel) qbody1)))
+        		(cond
+        			((null relMatched)
+        				; (maphash #'print-hash-entry matchings)
+        				; (print (format t "failed to match ~a with ~a and ~a" rel (gethash (caddr rel) matchings) (gethash (cadddr rel) matchings)))
+        				; (maphash #'print-hash-entry pastMatchings)
+        				(backtrack cont qbody1 qbody2))
+        			(t (matchBody (cons rel cont) qbody1 (rest qbody2)))
+    			)))
+        		; (and (matchRel (cadr rel) (caddr rel) (cadddr rel) qbody1)
+        		; 	 (matchBody (cons rel cont) qbody1 (rest qbody2)))))
     ))
 
 ; match relations
+; TODO: check pastMatchings so matchRel don't use any from there.
 (defun matchRel (f x y qbody)
 	(cond
-		((null qbody) nil)
+		((null qbody) nil) ; backtrack
 		((eq (caar qbody) 'definition) (matchRel f x y (rest qbody)))
 		(t (let* ((bindx (gethash x matchings))
 				  (bindy (gethash y matchings))
@@ -642,24 +742,64 @@
 				  (matchf (cadr rel))
 				  (matchx (caddr rel))
 				  (matchy (cadddr rel)))
-			; (print rel)
-			; (print bindx)
-			; (print bindy)
+			 ; (print rel)
+			 ; (print bindx)
+			 ; (print bindy)
 			(cond
 				((and (null bindx) (null bindy)) ; x, y free
 				 (cond
-				 	((equal f matchf) (setf (gethash x matchings) matchx)
-				 					  (setf (gethash y matchings) matchy)
-				 					  t)
+				 	((equal f matchf)
+				 		(let* ((pastMatchingx (gethash x pastMatchings))
+				 			   (pastMatchingy (gethash y pastMatchings)))
+				 		(cond
+				 			((null (member matchx pastMatchingx)) ; x matching works
+				 				(progn
+				 					(setf (gethash x matchings) matchx)
+				 					(setf (gethash x pastMatchings) (adjoin matchx pastMatchingx))
+				 					(setf (gethash y matchings) matchy)
+				 					(setf (gethash y pastMatchings) (adjoin matchy pastMatchingy))
+				 					t
+				 				))
+				 			((null (member matchy pastMatchingy)) ; y matching works, x does not
+				 				(progn
+				 					(setf (gethash y matchings) matchy)
+				 					(setf (gethash y pastMatchings) (adjoin matchy pastMatchingy))
+				 					t
+				 					))
+				 			(t (matchRel f x y (rest qbody))) ; none of the matching works
+				 			)
+				 		))
 				 	(t (matchRel f x y (rest qbody))))
 				)
-				((null bindx)
-				 (cond ; x free
-					((and (equal f matchf) (equal y matchy)) (setf (gethash x matchings) matchx) t)
+				((null bindx) ; x free
+				 (cond
+					((and (equal f matchf) (equal y matchy))
+						(let ((pastMatchingx (gethash x pastMatchings)))
+							(cond
+								((null (member matchx pastMatchingx))
+									(progn
+										(setf (gethash x matchings) matchx)
+										(setf (gethash x pastMatchings) (adjoin matchx pastMatchingx))
+										t
+									)
+								)
+								(t (matchRel f x y (rest qbody)))
+							)))
 					(t (matchRel f x y (rest qbody)))))
 				((null bindy) ; y free
 			     (cond
-			     	((and (equal f matchf) (equal x matchx)) (setf (gethash y matchings) matchy) t)
+			     	((and (equal f matchf) (equal x matchx))
+						(let ((pastMatchingy (gethash y pastMatchings)))
+							(cond
+								((null (member matchy pastMatchingy))
+									(progn
+										(setf (gethash y matchings) matchy)
+										(setf (gethash y pastMatchings) (adjoin matchy pastMatchingy))
+										t
+									)
+								)
+								(t (matchRel f x y (rest qbody)))
+							)))
 			     	(t (matchRel f x y (rest qbody)))))
 				(t (cond ; x, y bound
 						((equal (car qbody) `(relation ,f ,bindx ,bindy)) t)
@@ -679,9 +819,19 @@
 		((null qbody) nil) ; empty => no match
 		((eq (caar qbody) 'relation) (matchDefFree clst var (rest qbody))) ; relation => match rest
 		(t (let* ((def (car qbody)) ; is definition
-				  (clstToMatch (cadr def)))
+				  (clstToMatch (cadr def))
+				  (v (caddr def)))
 			(cond
-				((subsetp clstToMatch clst) (setf (gethash var matchings) (caddr def)) t) ; is subset, change set hashtable of mappings
+				((subsetp clstToMatch clst)
+					(let ((pastMatching (gethash var pastMatchings)))
+						(cond
+							((null (member v pastMatching)) ; not in past matching
+								 (progn (setf (gethash var pastMatchings) (adjoin v pastMatching))
+   									    (setf (gethash var matchings) v)
+									 	t))
+							(t (matchDefFree clst var (rest qbody))) ; in past matchings
+							)))
+							 ; is subset, change set hashtable of mappings
 				(t (matchDefFree clst var (rest qbody))))
 			))))
 
@@ -715,14 +865,18 @@
 ; returns: whether q1 is subsumed by q2
 (defun isIncluded (q1 q2)
 	(setq matchings (make-hash-table))
+	(setq pastMatchings (make-hash-table))
 	(let ((mapping (matchVars (cadr q2) (cadr q1) (make-hash-table))))
 		(cond
 			((null mapping) nil)
 			(t (setq matchings mapping)
-			   (matchBody (caddr q2) (caddr q1))))))
+			   (setq boundVars (cadr q1))
+			   (matchBody '() (caddr q2) (caddr q1))))))
 
 ; result is empty lst to start
 (defun filterQueries (queries existingQueries result)
+	;(print "filter")
+	;(print (car queries))
 	(cond
 		((null existingQueries) queries)
 		((null queries) result)
@@ -732,6 +886,7 @@
 
 
 (defun filterAll (queries front result)
+	(setq counter (+ counter 1))
 	(cond
 		((null queries) result)
 		((null (filterQueries (list (car queries)) front '())) ; subsumed by front
@@ -754,6 +909,20 @@
    	(RELATION F2 J #:G1036) (RELATION F3 J #:G1037))
   	NIL))) t)
 
+(sb-rt:deftest subsume-y2 (isQuerySubsumed
+'(QUERY (X Y Y J I J U V)
+  ((DEFINITION (B11 B12 B13 B14 A B21 B B22) J) (DEFINITION (M) X)
+   (DEFINITION NIL Y) (DEFINITION (DEPT) STRING_PRED) (RELATION F X Y)
+   (RELATION NAME STRING_PRED Y) (RELATION F1 J #:G635) (RELATION F2 J #:G636)
+   (RELATION F3 J #:G637))
+  ((R6 STRING_PRED)))
+ '((QUERY (X Y Y J I J U V)
+  ((DEFINITION (B11 B12 B13 B14 A B21 B22 B) J) (DEFINITION (M) X)
+   (DEFINITION NIL Y) (DEFINITION (DEPT) STRING_PRED) (RELATION F X Y)
+   (RELATION NAME STRING_PRED Y) (RELATION F1 J #:G635) (RELATION F2 J #:G636)
+   (RELATION F3 J #:G637))
+  ((R6 STRING_PRED))))) t)
+
 (sb-rt:deftest subsume-n2 (isQuerySubsumed
 	'(QUERY (X Y Y H I J U V)
   ((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A) H)
@@ -768,15 +937,6 @@
   NIL)))
 	nil)
 
-(isQuerySubsumed
-	'(QUERY (X Y Y H I J U V)
-  ((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A) H)
-   (DEFINITION (M) X) (DEFINITION (B B21 B22) J))
-  ((R3 H J)))
- 	'((QUERY (X Y Y J I J U V)
-  ((DEFINITION (B21 B22) Y) (DEFINITION (B11 B12 B13 B14 A B B21 B22) J)
-   (DEFINITION (M) X))
-  NIL)))
 
 (sb-rt:deftest subsume-n1 (isQuerySubsumed
 '(QUERY (X Y Y H I J U V)
@@ -790,6 +950,38 @@
    (RELATION F J I))
   ((R3 H J) (R8 I H J) (R9 STRING Y)))))
 nil)
+
+(sb-rt:deftest subsume-n3 (isQuerySubsumed
+	'(QUERY (X Y Y J I J U V)
+  ((DEFINITION (B11 B12 B13 B14 A B B21 B22) J) (DEFINITION (M) X)
+   (DEFINITION NIL Y) (DEFINITION (DEPT) STRING_PRED) (RELATION F X Y)
+   (RELATION NAME STRING_PRED Y) (RELATION F1 J #:G638) (RELATION F2 J #:G639)
+   (RELATION F3 J #:G640))
+  NIL)
+ '((QUERY (X Y Y J I J U V)
+  ((DEFINITION (B11 B12 B13 B14) J) (DEFINITION (M) X) (DEFINITION NIL Y)
+   (DEFINITION (DEPT) STRING_PRED) (DEFINITION (E1 E2 E3) I) (RELATION F X Y)
+   (RELATION F J I) (RELATION NAME STRING_PRED Y))
+  NIL)))
+ nil)
+
+; TODO: pass this test.
+; (isQuerySubsumed
+; 	'(QUERY (X Y Y H I J U V)
+;   ((DEFINITION (M) X) (DEFINITION NIL Y) (DEFINITION (PERSON) STRING_PRED)
+;    (DEFINITION (A) H) (DEFINITION (B B21 B22) J) (DEFINITION (D1 D2 D3) FR)
+;    (RELATION F X Y) (RELATION G H FR) (RELATION F1 H #:G690)
+;    (RELATION F1 J #:G690) (RELATION F2 H #:G691) (RELATION F2 J #:G691)
+;    (RELATION F3 H #:G692) (RELATION F3 J #:G692) (RELATION NAME STRING_PRED Y))
+;   NIL)
+;  '(
+;  (QUERY (X Y Y H I J U V)
+;   ((DEFINITION (M) X) (DEFINITION NIL Y) (DEFINITION (DEPT) STRING_PRED)
+;    (DEFINITION (A) H) (DEFINITION (B B21 B22) J) (DEFINITION (D1 D2 D3) FR)
+;    (RELATION F X Y) (RELATION G H FR) (RELATION F1 H #:G690)
+;    (RELATION F1 J #:G690) (RELATION F2 H #:G691) (RELATION F2 J #:G691)
+;    (RELATION F3 H #:G692) (RELATION F3 J #:G692) (RELATION NAME STRING_PRED Y))
+;   NIL)))
 
 (loadrules '(
 (subsumption
@@ -806,10 +998,13 @@ nil)
 			(Seq (Call removeAllDups) rule1 (Call rule2) rule4 (Call rule3) rule5 rule6 subsumption (Call rule8) rule9))
 			 ))
 
+(defun print-hash-entry (key value)
+    (format t "The value associated with the key ~S is ~S~%" key value))
 
 ;(applyRuleControl '(Call ApplyAllRules) comp3)
 ;(applyRuleControl '(Call rule8) comp3)
 ;(applyRuleControl 'subsumption comp3)
+(setq counter 0)
 
 (sb-rt:do-tests)
 
