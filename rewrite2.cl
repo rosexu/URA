@@ -654,14 +654,28 @@
 			(let* ((rel (car cont))
 				   (f (cadr rel))
 				   (x (caddr rel))
-				   (y (cadddr rel)))
+				   (y (cadddr rel))
+				   (xIsBound (member x boundVars))
+				   (yIsBound (member y boundVars))
+				   (xExistsPreviously (existInCont x (rest cont)))
+				   (yExistsPreviously (existInCont y (rest cont)))
+				   ; freeVars as in variables that does not exist previously
+				   ; in the continuation and that is not a bound var. x and y
+				   ; may have been matched to something.
+				   (freeVars (cond
+				   				((and (and (not xIsBound) (not xExistsPreviously))
+				   					  (and (not yIsBound) (not yExistsPreviously)))
+				   					  '(x y))
+				   				((and (not xIsBound) (not xExistsPreviously)) '(x))
+				   				((and (not yIsBound) (not yExistsPreviously)) '(y))
+				   				(t nil))))
 				(cond
-					((and (member x boundVars) (member y boundVars)) ; skip and keep backtracking
+					((and xIsBound yIsBound) ; skip and keep backtracking
 						(print "both vars are bound")
 						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
-					((or (and (existInCont x (rest cont)) (existInCont y (rest cont)))
-						 (and (existInCont x (rest cont)) (member y boundVars))
-						 (and (member x boundVars) (existInCont y (rest cont))))
+					((or (and xExistsPreviously yExistsPreviously)
+						 (and xExistsPreviously yIsBound)
+						 (and xIsBound yExistsPreviously))
 						 (print "exist previously")
 						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
 					((null (matchRel f x y qbody1)) ; no available free matching
@@ -671,11 +685,13 @@
 						(setf (gethash y pastMatchings) nil)
 						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
 					((matchRel f x y qbody1)
+						(print freeVars)
 					 	(print "found new match")
 					   	(matchBody cont qbody1 qbody2)) ; found new match and updated current matching
-					(t (print "wtf, something is wrong"))
-			))
+					(t (print "wtf, something is wrong")))
+			)
 		)))
+
 
 (defun existInCont (var cont)
 	(cond
