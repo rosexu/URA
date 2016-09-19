@@ -621,11 +621,7 @@
 				   				((and (not yIsBound) (not yExistsPreviously)) '(y))
 				   				(t nil))))
 				(cond
-					((and xIsBound yIsBound) ; skip and keep backtracking
-						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
-					((or (and xExistsPreviously yExistsPreviously)
-						 (and xExistsPreviously yIsBound)
-						 (and xIsBound yExistsPreviously))
+					((null freeVars)
 						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
 					(t (let ((oldxMatching (gethash x matchings))
 							 (oldyMatching (gethash y matchings)))
