@@ -123,8 +123,6 @@
 				 	`(relation ,(car lstf) ,y ,freshVar)
 				 	(makeRelations (cdr lstf) x y)))))))
 
-;Test: (makeRelations '(f1 f2 f3) 'x 'y)
-
 ; Helper for getAllBCombinations: adds item to the front of each
 ; list in lstOflst.
 (defun addToFront (item lstOflst)
@@ -148,11 +146,11 @@
 
 (sb-rt:deftest getAllBCombinations-one (getAllBCombinations '(B1) 'x 'y) (((definition (B1) x)) ((definition (B1) y))))
 (sb-rt:deftest getAllBCombinations-zero (getAllBCombinations '() 'x 'y) (nil))
-; (sb-rt:deftest getAllBCombinations-multi (getAllBCombinations '(B1 B2) 'x 'y)
-; 	(((relation B1 x) (relation B2 x))
-; 	 ((relation B1 x) (relation B2 y))
-; 	 ((relation B2 y) (relation B2 x))
-; 	 ((relation B2 y) (relation B2 y))))
+(sb-rt:deftest getAllBCombinations-multi (getAllBCombinations '(B1 B2) 'x 'y)
+	(((definition (B1) x) (definition (B2) x))
+	 ((definition (B1) x) (definition (B2) y))
+	 ((definition (B1) y) (definition (B2) x))
+	 ((definition (B1) y) (definition (B2) y))))
 
 ;*************************************************************
 ; Helper function for genR8Queries
@@ -174,9 +172,7 @@
 						   ,@(query-parts-lb queryInfo)
 						   ,@relations
 						   	)
-						  (
-						  	;(r3 ,(query-parts-v1 queryInfo) ,(query-parts-v2 queryInfo))
-						  ))
+						  ())
 				(genR8QueriesHelper part1 (cdr BComb) relations queryInfo)
 			)
 		)
@@ -295,9 +291,6 @@
 	)
 ))
 
-; (setq queryInfo (make-query-parts :vars '(x y) :lf '(definition front) :lb '(definition back)
-; 	:cf '(C1 C2) :cb '(C4 C5) :v1 'x))
-
 ;*********************************************************************
 ; Generate Quries for Rule 9.
 ;*********************************************************************
@@ -400,8 +393,6 @@
 			<< lb)
 			< newApdRules)
 		<< back
-		; start new query
-		;<< newQuery
 		(query < vars
  			((definition < maxPred < v1)
  			<< lf
@@ -409,22 +400,6 @@
  			<< lb)
  			()))
 	(Bindq maxPred (getMaximalPredecessors <q clst)
-		   ; newQuery (filterQueries
-		   ; 				`((query < vars
-					; 		((definition < maxPred < v1)
-					; 		<< lf
-					; 		<< lm
-					; 		<< lb)
-					; 	())) ; queries to be added
-					; 	'(<< front
-					; 		(query < vars
-					; 			(<< lf (definition < clst < var)
-					; 			<< lm (relation < f < v1 < var)
-					; 			<< lb)
-					; 			< newApdRules)
-					; 		<< back) ; existing queries
-					; 	'() ; result
-					; )
 		   newApdRules '(<< apdRules (r5 < var)))
 )))
 
@@ -488,14 +463,8 @@
 		   	> apdRules)
 		>* back)
 	(<< front (query < subbedVars < subbedBody (<< apdRules (r2 < f < v1))) << back)
-	;(<< front << newQuery << back)
 	(Bindq subbedVars (substitute <q v2 <q v3 <q vars)
 		   subbedBody (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3)
-		   ; mutation (setq intermediate (list (list 'query (substitute <q v2 <q v3 <q vars) (subBody '(<< lf (relation < f < v1 < v2) << lm << lb) <q v2 <q v3) '(<< apdRules (r2 < f < v1)))))
-		   ; mutation2 (applyRuleControl '(Call repRemoveDupRelAndMergeDupDefs) intermediate)
-		   ; newQuery (filterQueries intermediate
-		   ; 						   '(<< front << back) ; existing queries
-		   ; 						   '())
 		   ))))
 
 (loadrules '(
@@ -565,14 +534,6 @@
 		((and (eq A 'C) (eq B 'A)) t)
 		(t nil)))
 
-(loadrules '(
-	(removeDups
-		(>* front > q >* mid < q >* back)
-		(<< front < q << mid << back))))
-
-(LoadControl
-	'(removeAllDups (Rep removeDups)))
-
 (LoadControl
 	'(rule8
 		(Seq rule8Main
@@ -597,9 +558,6 @@
 	(Seq (Rep removeDupRelAfterSubstitution)
 		 (Rep mergeDuplicateDef))))
 
-; Sort by length of x.
-;(stable-sort tt #'(lambda (x y) (> (length x) (length y))))
-
 (defvar matchings (make-hash-table))
 
 ; returns hash of all the matchings, return nil if none found.
@@ -619,24 +577,17 @@
         )))
 
 (sb-rt:deftest matchVars-empty (matchVars '(X Y) '(X X) (make-hash-table)) nil)
-; (sb-rt:deftest matchVars-empty (matchVars '() '() (make-hash-table)) (make-hash-table))
-; (sb-rt:deftest matchVars-one (matchVars '(X) '(Y) (make-hash-table))
-;                                (progn (defparameter ht (make-hash-table))
-;                                       (setf (gethash 'Y ht) 'X)
-;                                       ht))
 
 ; variable -> set of past binded values
 ; variables must be free, those that are not free are taken care of in matchVars.
-; TODO: populate pastMatchings
 (defvar pastMatchings (make-hash-table))
 
-; TODO: Is deleting past matching after backtrack needed? Yes I think so.
+
 (defun backtrack (cont qbody1 qbody2)
-	(print "backtrack")
-	(print cont)
 	(cond
 		((null cont) nil) ; backtrack fails if continuation is empty.
-		((eq (caar cont) 'definition) ; definition
+		; definition
+		((eq (caar cont) 'definition)
 			(let* ((def (car cont))
 				   (clst (cadr def))
 				   (var (caddr def)))
@@ -645,12 +596,12 @@
 					((existInCont var (rest cont))
 						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
 					((null (matchDefFree clst var qbody1)) ; can't match because no available free matching
-						; (print (format t "reset ~a" def))
 						(setf (gethash var pastMatchings) nil) ; only set to nil if it doesn't exist in rest cont
 						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
 					(t (matchBody cont qbody1 qbody2)) ; new match for definition => keep matching body
 				)))
-		((eq (caar cont) 'relation) ; relation
+		; relation
+		((eq (caar cont) 'relation)
 			(let* ((rel (car cont))
 				   (f (cadr rel))
 				   (x (caddr rel))
@@ -671,23 +622,11 @@
 				   				(t nil))))
 				(cond
 					((and xIsBound yIsBound) ; skip and keep backtracking
-						(print "both vars are bound")
 						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
 					((or (and xExistsPreviously yExistsPreviously)
 						 (and xExistsPreviously yIsBound)
 						 (and xIsBound yExistsPreviously))
-						 (print "exist previously")
 						(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
-					; ((null (matchRel f x y qbody1)) ; no available free matching
-					; 	(print "no available free matching")
-					; 	; (print (format t "reset ~a" rel))
-					; 	(setf (gethash x pastMatchings) nil)
-					; 	(setf (gethash y pastMatchings) nil)
-					; 	(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
-					; ((matchRel f x y qbody1)
-					; 	(print freeVars)
-					;  	(print "found new match")
-					;    	(matchBody cont qbody1 qbody2)) ; found new match and updated current matching
 					(t (let ((oldxMatching (gethash x matchings))
 							 (oldyMatching (gethash y matchings)))
 							(cond
@@ -701,16 +640,14 @@
 								)
 							(let ((matched (matchRel f x y qbody1)))
 								(cond
-									((null matched)
-										(print "no available free matching")
+									((null matched) ; no available free matching
 										(setf (gethash x pastMatchings) nil)
 										(setf (gethash y pastMatchings) nil)
 										(setf (gethash x matchings) oldxMatching)
 										(setf (gethash y matchings) oldyMatching)
 										(backtrack (rest cont) qbody1 (cons (car cont) qbody2)))
-									(t 	(print "found new match")
+									(t 	; found new match and updated current matching
 										(matchBody cont qbody1 qbody2)))))
-					;(t (print "wtf, something is wrong"))
 					))
 			)
 		)))
@@ -750,27 +687,25 @@
             	   (defMatched (matchDef (cadr def) (caddr def) qbody1 (gethash (caddr def) matchings))))
             	(cond
             		((null defMatched)
-            			(maphash #'print-hash-entry matchings)
-            			(print (format t "failed to match ~a with ~a" def (gethash (caddr def) matchings)))
-            			(maphash #'print-hash-entry pastMatchings)
+            			; debugging statements:
+            			; (maphash #'print-hash-entry matchings)
+            			; (print (format t "failed to match ~a with ~a" def (gethash (caddr def) matchings)))
+            			; (maphash #'print-hash-entry pastMatchings)
 		     			(backtrack cont qbody1 qbody2))
             		(t (matchBody (cons def cont) qbody1 (rest qbody2))) ; def matched
             		)))
-                ; (and (matchDef (cadr def) (caddr def) qbody1 (gethash (caddr def) matchings))
-                ; 	 (matchBody qbody1 (rest qbody2)))))
         ((eq (caar qbody2) 'relation) ; relation
         	(let* ((rel (car qbody2))
         		   (relMatched (matchRel (cadr rel) (caddr rel) (cadddr rel) qbody1)))
         		(cond
         			((null relMatched)
-        				(maphash #'print-hash-entry matchings)
-        				(print (format t "failed to match ~a with ~a and ~a" rel (gethash (caddr rel) matchings) (gethash (cadddr rel) matchings)))
-        				(maphash #'print-hash-entry pastMatchings)
+        				; debugging statements:
+        				; (maphash #'print-hash-entry matchings)
+        				; (print (format t "failed to match ~a with ~a and ~a" rel (gethash (caddr rel) matchings) (gethash (cadddr rel) matchings)))
+        				; (maphash #'print-hash-entry pastMatchings)
         				(backtrack cont qbody1 qbody2))
         			(t (matchBody (cons rel cont) qbody1 (rest qbody2)))
     			)))
-        		; (and (matchRel (cadr rel) (caddr rel) (cadddr rel) qbody1)
-        		; 	 (matchBody (cons rel cont) qbody1 (rest qbody2)))))
     ))
 
 ; match relations
@@ -786,9 +721,6 @@
 				  (matchf (cadr rel))
 				  (matchx (caddr rel))
 				  (matchy (cadddr rel)))
-			 ; (print rel)
-			 ; (print bindx)
-			 ; (print bindy)
 			(cond
 				((and (null bindx) (null bindy)) ; x, y free
 				 (cond
@@ -848,10 +780,8 @@
 							)))
 			     	(t (matchRel f x y (rest qbody)))))
 				(t
-					(print "both vars are bound in match rel")
 					(cond ; x, y bound
 						((equal (car qbody) `(relation ,f ,bindx ,bindy))
-							(print "matched it with itself?")
 							t)
 						(t (matchRel f x y (rest qbody))))
 				)
@@ -887,10 +817,6 @@
 
 ; When the matching for var is known, match a definition.
 (defun matchDefBound (clst var qbody val)
-	; (print var)
-	; (print val)
-	; (print clst)
-	; (print qbody)
     (cond
         ((null qbody) nil)
         ((eq (caar qbody) 'definition)
@@ -925,8 +851,6 @@
 
 ; result is empty lst to start
 (defun filterQueries (queries existingQueries result)
-	;(print "filter")
-	;(print (car queries))
 	(cond
 		((null existingQueries) queries)
 		((null queries) result)
@@ -1016,7 +940,7 @@ nil)
  nil)
 
 ;Correct return value is nil since (DEFINITION (PERSON)) != (DEFINITION (DEPT))
-(isQuerySubsumed
+(sb-rt:deftest subsume-n4 (isQuerySubsumed
 	'(QUERY (X Y Y H I J U V)
   ((DEFINITION (M) X) (DEFINITION NIL Y) (DEFINITION (PERSON) STRING_PRED)
    (DEFINITION (A) H) (DEFINITION (B B21 B22) J) (DEFINITION (D1 D2 D3) FR)
@@ -1032,23 +956,25 @@ nil)
    (RELATION F1 J #:G690) (RELATION F2 H #:G691) (RELATION F2 J #:G691)
    (RELATION F3 H #:G692) (RELATION F3 J #:G692) (RELATION NAME STRING_PRED Y))
   NIL)))
+ nil)
 
-; (isQuerySubsumed
-; 	'(QUERY (X Y Y H I J U V)
-;   ((DEFINITION NIL Y) (DEFINITION (PERSON) STRING_PRED)
-;     (DEFINITION (D1 D2 D3) FR)
-;     (RELATION G H FR) (RELATION F1 H k1)
-;    (RELATION F1 J k1) (RELATION F2 H k2) (RELATION F2 J k2)
-;    (RELATION F3 H k3) (RELATION F3 J k3) (RELATION NAME STRING_PRED Y))
-;   NIL)
-;  '(
-;  (QUERY (X Y Y H I J U V)
-;   ((DEFINITION NIL Y) (DEFINITION (DEPT) STRING_PRED)
-;     (DEFINITION (D1 D2 D3) FR)
-;     (RELATION G H FR) (RELATION F1 H k1)
-;    (RELATION F1 J k1) (RELATION F2 H k2) (RELATION F2 J k2)
-;    (RELATION F3 H k3) (RELATION F3 J k3) (RELATION NAME STRING_PRED Y))
-;   NIL)))
+(sb-rt:deftest subsume-n4 (isQuerySubsumed
+	'(QUERY (X Y Y H I J U V)
+  ((DEFINITION NIL Y) (DEFINITION (PERSON) STRING_PRED)
+    (DEFINITION (D1 D2 D3) FR)
+    (RELATION G H FR) (RELATION F1 H k1)
+   (RELATION F1 J k1) (RELATION F2 H k2) (RELATION F2 J k2)
+   (RELATION F3 H k3) (RELATION F3 J k3) (RELATION NAME STRING_PRED Y))
+  NIL)
+ '(
+ (QUERY (X Y Y H I J U V)
+  ((DEFINITION NIL Y) (DEFINITION (DEPT) STRING_PRED)
+    (DEFINITION (D1 D2 D3) FR)
+    (RELATION G H FR) (RELATION F1 H k1)
+   (RELATION F1 J k1) (RELATION F2 H k2) (RELATION F2 J k2)
+   (RELATION F3 H k3) (RELATION F3 J k3) (RELATION NAME STRING_PRED Y))
+  NIL)))
+ nil)
 
 (loadrules '(
 (subsumption
@@ -1056,13 +982,12 @@ nil)
  		where (progn (Bindq filtered (filterAll <q lst '() '()))
  			         (! < (length <q filtered) (length <q lst))))
  	(<< filtered)
- 	;(Bindq filtered (filterAll <q lst '() '()))
  	)))
 
 (LoadControl
 	'(ApplyAllRules
 		(Rep
-			(Seq (Call removeAllDups) rule1 (Call rule2) rule4 (Call rule3) rule5 rule6 subsumption (Call rule8) rule9))
+			(Seq rule1 (Call rule2) rule4 (Call rule3) rule5 rule6 subsumption (Call rule8) rule9))
 			 ))
 
 (defun print-hash-entry (key value)
@@ -1070,7 +995,6 @@ nil)
 
 ;(applyRuleControl '(Call ApplyAllRules) comp3) ; 9 queries currently
 ;(applyRuleControl '(Call rule8) comp3)
-;(applyRuleControl 'subsumption comp3)
 (setq counter 0)
 
 (sb-rt:do-tests)
